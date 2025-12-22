@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Random Portal</title>
+  <meta name="description" content="Kliknij 'Zabierz mnie' i poleć losowo gdzieś w internet." />
+
+  <style>
+    :root{
+      --bg:#0b0e14;
+      --card:#0f1624cc;
+      --text:#e9f0ff;
+      --muted:#a9b4c7;
+      --stroke:#24324a;
+      --accent:#7cf7ff;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; min-height:100vh; display:grid; place-items:center;
+      background:
+        radial-gradient(900px 500px at 20% 20%, #15203a 0%, transparent 60%),
+        radial-gradient(700px 500px at 80% 40%, #2a1641 0%, transparent 60%),
+        radial-gradient(600px 600px at 50% 90%, #0f3a34 0%, transparent 55%),
+        var(--bg);
+      color:var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      padding:24px;
+    }
+    .card{
+      width:min(780px,100%);
+      background:var(--card);
+      border:1px solid var(--stroke);
+      border-radius:18px;
+      padding:22px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 18px 60px rgba(0,0,0,.45);
+    }
+    h1{margin:0 0 8px 0; font-size:clamp(22px,3.2vw,34px)}
+    p{margin:0 0 14px 0; color:var(--muted); line-height:1.35}
+    .row{display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:14px;}
+    button, select{
+      border:1px solid var(--stroke);
+      background:#0b1220;
+      color:var(--text);
+      border-radius:14px;
+      padding:12px 14px;
+      font-size:15px;
+      outline:none;
+    }
+    button{
+      cursor:pointer;
+      font-weight:800;
+      border-color: rgba(124,247,255,.35);
+      box-shadow: 0 10px 30px rgba(124,247,255,.12);
+    }
+    button:disabled{
+      opacity:.55; cursor:not-allowed;
+      box-shadow:none;
+    }
+    .status{
+      margin-top:14px;
+      border:1px dashed rgba(124,247,255,.35);
+      background:#07111f;
+      border-radius:14px;
+      padding:12px 14px;
+      color:#cfe9ff;
+      word-break:break-word;
+      min-height:44px;
+      display:flex;
+      align-items:center;
+    }
+    .tiny{ font-size:12px; color:var(--muted); margin-top:10px }
+    a{color:var(--accent); text-decoration:none}
+    a:hover{text-decoration:underline}
+  </style>
+</head>
+
+<body>
+  <main class="card">
+    <h1>🎲 Random Portal</h1>
+    <p>Klikasz i lecisz w losowy link z Supabase. Jak nie ma linków albo Supabase nie działa, to poleci fallback (Wikipedia random).</p>
+
+    <div class="row">
+      <label for="mode" style="color:var(--muted); font-size:13px;">Tryb</label>
+      <select id="mode">
+        <option value="supabase" selected>Supabase (tabela random_links)</option>
+        <option value="mix">Mix (Supabase + randomizery)</option>
+        <option value="wiki">Wikipedia (losowy artykuł)</option>
+        <option value="internet">Randomizery (bez Supabase)</option>
+      </select>
+
+      <button id="goBtn" disabled>Zabierz mnie</button>
+      <button id="copyBtn" disabled>Kopiuj link</button>
+    </div>
+
+    <div class="status" id="status">Ładuję…</div>
+    <div class="tiny" id="meta">—</div>
+  </main>
+
+  <script>
+    /**********************
+     * 1) Wklej swoje dane:
+     **********************/
+    const SUPABASE_URL = "WKLEJ_TU_PROJECT_URL";
+    const SUPABASE_ANON_KEY = "WKLEJ_TU_ANON_PUBLIC_KEY";
+
+    /**********************
+     * 2) Fallback randomizery:
+     **********************/
+    const randomizers = [
+      { url: "https://en.wikipedia.org/wiki/Special:Random", title: "Wikipedia – losowy artykuł" },
+      { url: "https://commons.wikimedia.org/wiki/Special:Random/File", title: "Wikimedia – losowy plik" },
+      { url: "https://www.wikidata.org/wiki/Special:Random", title: "Wikidata – losowy wpis" },
+      { url: "https://theuselessweb.com/", title: "The Useless Web" }
+    ];
+
+    const $status = document.getElementById("status");
+    const $meta = document.getElementById("meta");
+    const $mode = document.getElementById("mode");
+    const $go = document.getElementById("goBtn");
+    const $copy = document.getElementById("copyBtn");
+
+    let links = [];
+    let lastUrl = "";
+
+    function setStatus(msg){ $status.textContent = msg || " "; }
+    function setMeta(msg){ $meta.innerHTML = msg || " "; }
+    function pick(arr){ return arr[Math.floor(Math.random() * arr.length)]; }
+
+    function validConfig(){
+      return SUPABASE_URL && SUPABASE_ANON_KEY &&
+             !SUPABASE_URL.includes("WKLEJ") && !SUPABASE_ANON_KEY.includes("WKLEJ");
+    }
+
+    async function fetchLinks(){
+      if (!validConfig()) {
+        setStatus("Wklej SUPABASE_URL i SUPABASE_ANON_KEY w kodzie (na dole).");
+        setMeta("Supabase → Project Settings → API. Potem odśwież stronę.");
+        return [];
+      }
+
+      const endpoint = `${SUPABASE_URL}/rest/v1/random_links?select=id,url,title&enabled=eq.true&order=created_at.desc`;
+      const res = await fetch(endpoint, {
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          authorization: `Bearer ${SUPABASE_ANON_KEY}`
+        }
+      });
+
+      if (!res.ok) {
+        const t = await res.text().catch(()=> "");
+        setStatus("Nie mogę pobrać linków z Supabase. Sprawdź RLS/policy.");
+        setMeta(`HTTP ${res.status} — ${t.slice(0, 140)}`);
+        return [];
+      }
+
+      return await res.json();
+    }
+
+    function choose(mode){
+      if (mode === "wiki") return { url: "https://en.wikipedia.org/wiki/Special:Random", title: "Wikipedia – losowy artykuł" };
+      if (mode === "internet") return pick(randomizers);
+
+      if (mode === "supabase") {
+        if (links.length) {
+          const it = pick(links);
+          return { url: it.url, title: it.title || it.url };
+        }
+        // brak linków? fallback
+        return pick(randomizers);
+      }
+
+      // mix
+      if (links.length && Math.random() < 0.7) {
+        const it = pick(links);
+        return { url: it.url, title: it.title || it.url };
+      }
+      return pick(randomizers);
+    }
+
+    function go(url){
+      lastUrl = url;
+      $copy.disabled = !lastUrl;
+      setTimeout(() => { window.location.href = url; }, 250);
+    }
+
+    $go.addEventListener("click", () => {
+      const mode = $mode.value;
+      const it = choose(mode);
+      setStatus(`Lecisz: ${it.title}`);
+      setMeta(`<a href="${it.url}" target="_blank" rel="noopener">${it.url}</a>`);
+      go(it.url);
+    });
+
+    $copy.addEventListener("click", async () => {
+      if (!lastUrl) return;
+      try {
+        await navigator.clipboard.writeText(lastUrl);
+        setStatus("Skopiowane ✅");
+        setMeta(`<a href="${lastUrl}" target="_blank" rel="noopener">${lastUrl}</a>`);
+      } catch {
+        setStatus("Nie mogę skopiować automatycznie — masz link poniżej:");
+        setMeta(`<a href="${lastUrl}" target="_blank" rel="noopener">${lastUrl}</a>`);
+      }
+    });
+
+    (async function init(){
+      setStatus("Ładuję linki z Supabase…");
+      links = await fetchLinks();
+
+      if (!validConfig()) {
+        $go.disabled = true;
+        $copy.disabled = true;
+        return;
+      }
+
+      if (links.length) {
+        setStatus(`Gotowe. Linków w bazie: ${links.length}. Kliknij „Zabierz mnie”.`);
+        setMeta("Dopisz więcej w Supabase → random_links.");
+      } else {
+        setStatus("W bazie nie ma linków (albo wszystkie disabled). Użyję fallbacków, ale możesz wrzucić inserty SQL.");
+        setMeta("Tryb MIX/Wiki/Internet nadal działa.");
+      }
+
+      $go.disabled = false;
+    })();
+  </script>
+</body>
+</html>

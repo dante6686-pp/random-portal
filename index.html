@@ -28,7 +28,7 @@
       padding:24px;
     }
     .card{
-      width:min(780px,100%);
+      width:min(840px,100%);
       background:var(--card);
       border:1px solid var(--stroke);
       border-radius:18px;
@@ -73,16 +73,24 @@
     .tiny{ font-size:12px; color:var(--muted); margin-top:10px }
     a{color:var(--accent); text-decoration:none}
     a:hover{text-decoration:underline}
+    .label{
+      color:var(--muted);
+      font-size:13px;
+      margin-right:2px;
+    }
   </style>
 </head>
 
 <body>
   <main class="card">
     <h1>🎲 Random Portal</h1>
-    <p>Klikasz i lecisz w losowy link z Supabase. Jak nie ma linków albo Supabase nie działa, to poleci fallback (Wikipedia random).</p>
+    <p>
+      Klikasz i lecisz w losowy link. Domyślnie losuje z Twojej bazy (Supabase).
+      Możesz też włączyć mix albo totalny random z internetu.
+    </p>
 
     <div class="row">
-      <label for="mode" style="color:var(--muted); font-size:13px;">Tryb</label>
+      <span class="label">Tryb</span>
       <select id="mode">
         <option value="supabase" selected>Supabase (tabela random_links)</option>
         <option value="mix">Mix (Supabase + randomizery)</option>
@@ -90,8 +98,14 @@
         <option value="internet">Randomizery (bez Supabase)</option>
       </select>
 
+      <span class="label">Kategoria</span>
+      <select id="tag">
+        <option value="all" selected>Wszystko</option>
+      </select>
+
       <button id="goBtn" disabled>Zabierz mnie</button>
       <button id="copyBtn" disabled>Kopiuj link</button>
+      <button id="shareBtn" disabled>Share</button>
     </div>
 
     <div class="status" id="status">Ładuję…</div>
@@ -100,13 +114,14 @@
 
   <script>
     /**********************
-     * 1) Wklej swoje dane:
+     * Wklej swoje dane:
+     * Supabase → Project Settings → API
      **********************/
-    const SUPABASE_URL = "https://dyfrzwxhycqnqntvkuxy.supabase.co";
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR5ZnJ6d3hoeWNxbnFudHZrdXh5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ1ODM5MjgsImV4cCI6MjA4MDE1OTkyOH0.n4jP0q7YZY-jQaSnHUkKWyI9wM02iHXnRXS31AATnY0";
+    const SUPABASE_URL = "WKLEJ_TU_PROJECT_URL";
+    const SUPABASE_ANON_KEY = "WKLEJ_TU_ANON_PUBLIC_KEY";
 
     /**********************
-     * 2) Fallback randomizery:
+     * Fallback randomizery
      **********************/
     const randomizers = [
       { url: "https://en.wikipedia.org/wiki/Special:Random", title: "Wikipedia – losowy artykuł" },
@@ -118,29 +133,46 @@
     const $status = document.getElementById("status");
     const $meta = document.getElementById("meta");
     const $mode = document.getElementById("mode");
+    const $tag = document.getElementById("tag");
     const $go = document.getElementById("goBtn");
     const $copy = document.getElementById("copyBtn");
+    const $share = document.getElementById("shareBtn");
 
     let links = [];
     let lastUrl = "";
+    let lastTitle = "";
 
     function setStatus(msg){ $status.textContent = msg || " "; }
-    function setMeta(msg){ $meta.innerHTML = msg || " "; }
+    function setMetaHtml(html){ $meta.innerHTML = html || " "; }
     function pick(arr){ return arr[Math.floor(Math.random() * arr.length)]; }
+
+    function escapeHtml(s){
+      return String(s).replace(/[&<>"']/g, m => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+      }[m]));
+    }
+
+    function normTag(t){
+      return (t || "").trim();
+    }
 
     function validConfig(){
       return SUPABASE_URL && SUPABASE_ANON_KEY &&
-             !SUPABASE_URL.includes("WKLEJ") && !SUPABASE_ANON_KEY.includes("WKLEJ");
+        !SUPABASE_URL.includes("WKLEJ") &&
+        !SUPABASE_ANON_KEY.includes("WKLEJ");
     }
 
     async function fetchLinks(){
       if (!validConfig()) {
         setStatus("Wklej SUPABASE_URL i SUPABASE_ANON_KEY w kodzie (na dole).");
-        setMeta("Supabase → Project Settings → API. Potem odśwież stronę.");
+        setMetaHtml("Supabase → Project Settings → API. Potem odśwież stronę.");
         return [];
       }
 
-      const endpoint = `${SUPABASE_URL}/rest/v1/random_links?select=id,url,title&enabled=eq.true&order=created_at.desc`;
+      // pobieramy też tag (kategoria)
+      const endpoint =
+        `${SUPABASE_URL}/rest/v1/random_links?select=id,url,title,tag&enabled=eq.true&order=created_at.desc`;
+
       const res = await fetch(endpoint, {
         headers: {
           apikey: SUPABASE_ANON_KEY,
@@ -151,45 +183,91 @@
       if (!res.ok) {
         const t = await res.text().catch(()=> "");
         setStatus("Nie mogę pobrać linków z Supabase. Sprawdź RLS/policy.");
-        setMeta(`HTTP ${res.status} — ${t.slice(0, 140)}`);
+        setMetaHtml(`HTTP ${res.status} — ${escapeHtml(t.slice(0, 160))}`);
         return [];
       }
 
       return await res.json();
     }
 
+    function buildTagOptions(items){
+      const tags = Array.from(
+        new Set(items.map(x => normTag(x.tag)).filter(Boolean))
+      ).sort((a,b)=>a.localeCompare(b));
+
+      const options =
+        `<option value="all" selected>Wszystko</option>` +
+        tags.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join("");
+
+      $tag.innerHTML = options;
+
+      if (!tags.length) {
+        // jak nie ma tagów w bazie, zostawiamy tylko "Wszystko"
+        $tag.disabled = true;
+      } else {
+        $tag.disabled = false;
+      }
+    }
+
+    function filteredLinks(){
+      const selected = $tag.value || "all";
+      if (selected === "all") return links;
+      return links.filter(l => normTag(l.tag).toLowerCase() === selected.toLowerCase());
+    }
+
     function choose(mode){
-      if (mode === "wiki") return { url: "https://en.wikipedia.org/wiki/Special:Random", title: "Wikipedia – losowy artykuł" };
-      if (mode === "internet") return pick(randomizers);
+      const filtered = filteredLinks();
+
+      if (mode === "wiki") {
+        return { url: "https://en.wikipedia.org/wiki/Special:Random", title: "Wikipedia – losowy artykuł" };
+      }
+      if (mode === "internet") {
+        return pick(randomizers);
+      }
 
       if (mode === "supabase") {
-        if (links.length) {
-          const it = pick(links);
-          return { url: it.url, title: it.title || it.url };
+        if (filtered.length) {
+          const it = pick(filtered);
+          return { url: it.url, title: it.title || it.url, tag: normTag(it.tag) };
         }
-        // brak linków? fallback
         return pick(randomizers);
       }
 
       // mix
-      if (links.length && Math.random() < 0.7) {
-        const it = pick(links);
-        return { url: it.url, title: it.title || it.url };
+      if (filtered.length && Math.random() < 0.7) {
+        const it = pick(filtered);
+        return { url: it.url, title: it.title || it.url, tag: normTag(it.tag) };
       }
       return pick(randomizers);
     }
 
-    function go(url){
+    function setLast(url, title){
       lastUrl = url;
-      $copy.disabled = !lastUrl;
+      lastTitle = title || url;
+
+      const enabled = !!lastUrl;
+      $copy.disabled = !enabled;
+      $share.disabled = !enabled;
+    }
+
+    function go(url){
       setTimeout(() => { window.location.href = url; }, 250);
+    }
+
+    function currentTagLabel(){
+      const v = $tag.value || "all";
+      if (v === "all") return "";
+      return ` | kategoria: ${v}`;
     }
 
     $go.addEventListener("click", () => {
       const mode = $mode.value;
       const it = choose(mode);
-      setStatus(`Lecisz: ${it.title}`);
-      setMeta(`<a href="${it.url}" target="_blank" rel="noopener">${it.url}</a>`);
+
+      setStatus(`Lecisz: ${it.title}${currentTagLabel()}`);
+      setMetaHtml(`<a href="${escapeHtml(it.url)}" target="_blank" rel="noopener">${escapeHtml(it.url)}</a>`);
+
+      setLast(it.url, it.title);
       go(it.url);
     });
 
@@ -198,11 +276,47 @@
       try {
         await navigator.clipboard.writeText(lastUrl);
         setStatus("Skopiowane ✅");
-        setMeta(`<a href="${lastUrl}" target="_blank" rel="noopener">${lastUrl}</a>`);
+        setMetaHtml(`<a href="${escapeHtml(lastUrl)}" target="_blank" rel="noopener">${escapeHtml(lastUrl)}</a>`);
       } catch {
         setStatus("Nie mogę skopiować automatycznie — masz link poniżej:");
-        setMeta(`<a href="${lastUrl}" target="_blank" rel="noopener">${lastUrl}</a>`);
+        setMetaHtml(`<a href="${escapeHtml(lastUrl)}" target="_blank" rel="noopener">${escapeHtml(lastUrl)}</a>`);
       }
+    });
+
+    $share.addEventListener("click", async () => {
+      if (!lastUrl) return;
+
+      const tagTxt = ($tag.value && $tag.value !== "all") ? ` (${ $tag.value })` : "";
+      const text = `Random Portal${tagTxt}: ${lastUrl}`;
+
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: "Random Portal", text, url: lastUrl });
+          return;
+        } catch (_) {
+          // jak user anuluje share, nic nie robimy
+        }
+      }
+
+      // fallback: kopiuj do schowka
+      try {
+        await navigator.clipboard.writeText(lastUrl);
+        setStatus("Skopiowane (share fallback) ✅");
+        setMetaHtml(`<a href="${escapeHtml(lastUrl)}" target="_blank" rel="noopener">${escapeHtml(lastUrl)}</a>`);
+      } catch {
+        setStatus("Share nie działa — masz link poniżej:");
+        setMetaHtml(`<a href="${escapeHtml(lastUrl)}" target="_blank" rel="noopener">${escapeHtml(lastUrl)}</a>`);
+      }
+    });
+
+    $tag.addEventListener("change", () => {
+      const filtered = filteredLinks();
+      if ($tag.value === "all") {
+        setStatus(`Kategoria: Wszystko (${links.length} linków).`);
+      } else {
+        setStatus(`Kategoria: ${$tag.value} (${filtered.length} linków).`);
+      }
+      setMetaHtml("Kliknij „Zabierz mnie”.");
     });
 
     (async function init(){
@@ -212,18 +326,22 @@
       if (!validConfig()) {
         $go.disabled = true;
         $copy.disabled = true;
+        $share.disabled = true;
+        $tag.disabled = true;
         return;
       }
 
       if (links.length) {
+        buildTagOptions(links);
         setStatus(`Gotowe. Linków w bazie: ${links.length}. Kliknij „Zabierz mnie”.`);
-        setMeta("Dopisz więcej w Supabase → random_links.");
+        setMetaHtml("Dopisz więcej w Supabase → random_links. Ustaw tagi (kategorie), żeby filtrować.");
+        $go.disabled = false;
       } else {
-        setStatus("W bazie nie ma linków (albo wszystkie disabled). Użyję fallbacków, ale możesz wrzucić inserty SQL.");
-        setMeta("Tryb MIX/Wiki/Internet nadal działa.");
+        setStatus("W bazie nie ma linków (albo wszystkie disabled). Użyję fallbacków.");
+        setMetaHtml("Tryb MIX/Wiki/Internet nadal działa.");
+        $go.disabled = false;
+        $tag.disabled = true;
       }
-
-      $go.disabled = false;
     })();
   </script>
 </body>

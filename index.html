@@ -28,7 +28,7 @@
       padding:24px;
     }
     .card{
-      width:min(840px,100%);
+      width:min(920px,100%);
       background:var(--card);
       border:1px solid var(--stroke);
       border-radius:18px;
@@ -73,10 +73,18 @@
     .tiny{ font-size:12px; color:var(--muted); margin-top:10px }
     a{color:var(--accent); text-decoration:none}
     a:hover{text-decoration:underline}
-    .label{
+    .label{ color:var(--muted); font-size:13px; margin-right:2px; }
+    .split{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .pill{
+      border:1px solid var(--stroke);
+      border-radius:999px;
+      padding:6px 10px;
+      font-size:12px;
       color:var(--muted);
-      font-size:13px;
-      margin-right:2px;
+      background:#0b1220aa;
+    }
+    .danger{
+      border-color: rgba(255,120,120,.35);
     }
   </style>
 </head>
@@ -85,8 +93,8 @@
   <main class="card">
     <h1>🎲 Random Portal</h1>
     <p>
-      Klikasz i lecisz w losowy link. Domyślnie losuje z Twojej bazy (Supabase).
-      Możesz też włączyć mix albo totalny random z internetu.
+      Klikasz i otwiera się losowa strona w <b>nowej karcie</b>.
+      Portal stara się nie powtarzać już otwartych linków (pamięta to lokalnie w przeglądarce).
     </p>
 
     <div class="row">
@@ -106,10 +114,14 @@
       <button id="goBtn" disabled>Zabierz mnie</button>
       <button id="copyBtn" disabled>Kopiuj link</button>
       <button id="shareBtn" disabled>Share</button>
+      <button id="resetBtn" class="danger" title="Pozwala losować te same linki od nowa">Reset historii</button>
     </div>
 
     <div class="status" id="status">Ładuję…</div>
-    <div class="tiny" id="meta">—</div>
+    <div class="tiny split">
+      <span id="meta">—</span>
+      <span class="pill">Otwartych: <span id="openedCount">0</span></span>
+    </div>
   </main>
 
   <script>
@@ -117,8 +129,8 @@
      * Wklej swoje dane:
      * Supabase → Project Settings → API
      **********************/
-    const SUPABASE_URL = "https://dyfrzwxhycqnqntvkuxy.supabase.co";
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR5ZnJ6d3hoeWNxbnFudHZrdXh5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ1ODM5MjgsImV4cCI6MjA4MDE1OTkyOH0.n4jP0q7YZY-jQaSnHUkKWyI9wM02iHXnRXS31AATnY0";
+    const SUPABASE_URL = "WKLEJ_TU_PROJECT_URL";
+    const SUPABASE_ANON_KEY = "WKLEJ_TU_ANON_PUBLIC_KEY";
 
     /**********************
      * Fallback randomizery
@@ -130,6 +142,12 @@
       { url: "https://theuselessweb.com/", title: "The Useless Web" }
     ];
 
+    // ile prób ma zrobić zanim uzna "dobra, nie ma nowych"
+    const MAX_UNIQUE_TRIES = 30;
+
+    // localStorage key
+    const OPENED_KEY = "rp_opened_urls_v1";
+
     const $status = document.getElementById("status");
     const $meta = document.getElementById("meta");
     const $mode = document.getElementById("mode");
@@ -137,6 +155,8 @@
     const $go = document.getElementById("goBtn");
     const $copy = document.getElementById("copyBtn");
     const $share = document.getElementById("shareBtn");
+    const $reset = document.getElementById("resetBtn");
+    const $openedCount = document.getElementById("openedCount");
 
     let links = [];
     let lastUrl = "";
@@ -156,6 +176,40 @@
       return (t || "").trim();
     }
 
+    function normalizeUrl(u){
+      try {
+        const url = new URL(u);
+        // normalizacja minimalna: usuń trailing slash
+        return url.href.replace(/\/$/, "");
+      } catch {
+        return String(u || "").trim();
+      }
+    }
+
+    function loadOpenedSet(){
+      try{
+        const raw = localStorage.getItem(OPENED_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        return new Set((arr || []).map(normalizeUrl));
+      }catch{
+        return new Set();
+      }
+    }
+
+    function saveOpenedSet(set){
+      try{
+        localStorage.setItem(OPENED_KEY, JSON.stringify(Array.from(set)));
+      }catch{}
+      updateOpenedCount(set);
+    }
+
+    function updateOpenedCount(set){
+      $openedCount.textContent = String(set.size);
+    }
+
+    let opened = loadOpenedSet();
+    updateOpenedCount(opened);
+
     function validConfig(){
       return SUPABASE_URL && SUPABASE_ANON_KEY &&
         !SUPABASE_URL.includes("WKLEJ") &&
@@ -169,7 +223,6 @@
         return [];
       }
 
-      // pobieramy też tag (kategoria)
       const endpoint =
         `${SUPABASE_URL}/rest/v1/random_links?select=id,url,title,tag&enabled=eq.true&order=created_at.desc`;
 
@@ -200,13 +253,7 @@
         tags.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join("");
 
       $tag.innerHTML = options;
-
-      if (!tags.length) {
-        // jak nie ma tagów w bazie, zostawiamy tylko "Wszystko"
-        $tag.disabled = true;
-      } else {
-        $tag.disabled = false;
-      }
+      $tag.disabled = !tags.length;
     }
 
     function filteredLinks(){
@@ -215,7 +262,7 @@
       return links.filter(l => normTag(l.tag).toLowerCase() === selected.toLowerCase());
     }
 
-    function choose(mode){
+    function chooseCandidate(mode){
       const filtered = filteredLinks();
 
       if (mode === "wiki") {
@@ -241,6 +288,17 @@
       return pick(randomizers);
     }
 
+    function pickUnique(mode){
+      // próbujemy kilka razy znaleźć nieotwierany link
+      for (let i = 0; i < MAX_UNIQUE_TRIES; i++){
+        const it = chooseCandidate(mode);
+        const nu = normalizeUrl(it.url);
+        if (!opened.has(nu)) return it;
+      }
+      // jeśli wszystko się powtarza, zwracamy cokolwiek
+      return chooseCandidate(mode);
+    }
+
     function setLast(url, title){
       lastUrl = url;
       lastTitle = title || url;
@@ -250,25 +308,38 @@
       $share.disabled = !enabled;
     }
 
-    function go(url){
-      setTimeout(() => { window.location.href = url; }, 250);
-    }
-
     function currentTagLabel(){
       const v = $tag.value || "all";
       if (v === "all") return "";
       return ` | kategoria: ${v}`;
     }
 
+    function openInNewTab(url){
+      // "_blank" + "noopener,noreferrer" żeby było bezpiecznie
+      const win = window.open(url, "_blank", "noopener,noreferrer");
+      if (!win) {
+        // jeśli popup blocker zablokuje
+        setStatus("Przeglądarka zablokowała otwarcie nowej karty (popup). Kliknij link poniżej ręcznie.");
+        setMetaHtml(`<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>`);
+      }
+    }
+
     $go.addEventListener("click", () => {
       const mode = $mode.value;
-      const it = choose(mode);
+      const it = pickUnique(mode);
 
-      setStatus(`Lecisz: ${it.title}${currentTagLabel()}`);
-      setMetaHtml(`<a href="${escapeHtml(it.url)}" target="_blank" rel="noopener">${escapeHtml(it.url)}</a>`);
+      const nu = normalizeUrl(it.url);
+      const wasOpened = opened.has(nu);
+
+      // zapamiętaj jako otwarte
+      opened.add(nu);
+      saveOpenedSet(opened);
+
+      setStatus(`Otwieram: ${it.title}${currentTagLabel()}${wasOpened ? " (powtórka)" : ""}`);
+      setMetaHtml(`<a href="${escapeHtml(it.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(it.url)}</a>`);
 
       setLast(it.url, it.title);
-      go(it.url);
+      openInNewTab(it.url);
     });
 
     $copy.addEventListener("click", async () => {
@@ -276,10 +347,10 @@
       try {
         await navigator.clipboard.writeText(lastUrl);
         setStatus("Skopiowane ✅");
-        setMetaHtml(`<a href="${escapeHtml(lastUrl)}" target="_blank" rel="noopener">${escapeHtml(lastUrl)}</a>`);
+        setMetaHtml(`<a href="${escapeHtml(lastUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(lastUrl)}</a>`);
       } catch {
         setStatus("Nie mogę skopiować automatycznie — masz link poniżej:");
-        setMetaHtml(`<a href="${escapeHtml(lastUrl)}" target="_blank" rel="noopener">${escapeHtml(lastUrl)}</a>`);
+        setMetaHtml(`<a href="${escapeHtml(lastUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(lastUrl)}</a>`);
       }
     });
 
@@ -293,20 +364,28 @@
         try {
           await navigator.share({ title: "Random Portal", text, url: lastUrl });
           return;
-        } catch (_) {
-          // jak user anuluje share, nic nie robimy
-        }
+        } catch (_) {}
       }
 
       // fallback: kopiuj do schowka
       try {
         await navigator.clipboard.writeText(lastUrl);
         setStatus("Skopiowane (share fallback) ✅");
-        setMetaHtml(`<a href="${escapeHtml(lastUrl)}" target="_blank" rel="noopener">${escapeHtml(lastUrl)}</a>`);
+        setMetaHtml(`<a href="${escapeHtml(lastUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(lastUrl)}</a>`);
       } catch {
         setStatus("Share nie działa — masz link poniżej:");
-        setMetaHtml(`<a href="${escapeHtml(lastUrl)}" target="_blank" rel="noopener">${escapeHtml(lastUrl)}</a>`);
+        setMetaHtml(`<a href="${escapeHtml(lastUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(lastUrl)}</a>`);
       }
+    });
+
+    $reset.addEventListener("click", () => {
+      opened = new Set();
+      saveOpenedSet(opened);
+      setStatus("Zresetowane. Możesz odkrywać od nowa.");
+      setMetaHtml("Kliknij „Zabierz mnie”.");
+      setLast("", "");
+      $copy.disabled = true;
+      $share.disabled = true;
     });
 
     $tag.addEventListener("change", () => {
@@ -334,7 +413,7 @@
       if (links.length) {
         buildTagOptions(links);
         setStatus(`Gotowe. Linków w bazie: ${links.length}. Kliknij „Zabierz mnie”.`);
-        setMetaHtml("Dopisz więcej w Supabase → random_links. Ustaw tagi (kategorie), żeby filtrować.");
+        setMetaHtml("Tip: dodawaj tagi (kategorie) w Supabase → random_links.");
         $go.disabled = false;
       } else {
         setStatus("W bazie nie ma linków (albo wszystkie disabled). Użyję fallbacków.");

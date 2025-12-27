@@ -58,6 +58,14 @@
       opacity:.55; cursor:not-allowed;
       box-shadow:none;
     }
+    /* big main CTA */
+    .goBig{
+      width:100%;
+      padding:18px 18px;
+      font-size:18px;
+      border-radius:16px;
+      margin-top:8px;
+    }
     .status{
       margin-top:14px;
       border:1px dashed rgba(124,247,255,.35);
@@ -83,9 +91,9 @@
       color:var(--muted);
       background:#0b1220aa;
     }
-    .danger{
-      border-color: rgba(255,120,120,.35);
-    }
+    .danger{ border-color: rgba(255,120,120,.35); }
+    .toolsRow{ justify-content: space-between; }
+    .toolsRight{ display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
   </style>
 </head>
 
@@ -93,29 +101,29 @@
   <main class="card">
     <h1>🎲 Random Portal</h1>
     <p>
-      Klikasz i otwiera się losowa strona w <b>nowej karcie</b>.
-      Portal stara się nie powtarzać już otwartych linków (pamięta to lokalnie w przeglądarce).
+      Jeden guzik. Jedna losowa przygoda.
+      Losuje między Twoją bazą (Supabase) a randomizerami i otwiera w <b>nowej karcie</b>.
+      Portal pamięta już otwarte linki (żeby się nie mielić w kółko).
     </p>
 
-    <div class="row">
-      <span class="label">Tryb</span>
-      <select id="mode">
-        <option value="supabase" selected>Supabase (tabela random_links)</option>
-        <option value="mix">Mix (Supabase + randomizery)</option>
-        <option value="wiki">Wikipedia (losowy artykuł)</option>
-        <option value="internet">Randomizery (bez Supabase)</option>
-      </select>
+    <!-- Controls -->
+    <div class="row toolsRow">
+      <div class="split">
+        <span class="label">Kategoria</span>
+        <select id="tag">
+          <option value="all" selected>Wszystko</option>
+        </select>
+      </div>
 
-      <span class="label">Kategoria</span>
-      <select id="tag">
-        <option value="all" selected>Wszystko</option>
-      </select>
-
-      <button id="goBtn" disabled>Zabierz mnie</button>
-      <button id="copyBtn" disabled>Kopiuj link</button>
-      <button id="shareBtn" disabled>Share</button>
-      <button id="resetBtn" class="danger" title="Pozwala losować te same linki od nowa">Reset historii</button>
+      <div class="toolsRight">
+        <button id="copyBtn" disabled>Kopiuj link</button>
+        <button id="shareBtn" disabled>Share</button>
+        <button id="resetBtn" class="danger" title="Pozwala losować te same linki od nowa">Reset historii</button>
+      </div>
     </div>
+
+    <!-- Big button -->
+    <button id="goBtn" class="goBig" disabled>Zabierz mnie</button>
 
     <div class="status" id="status">Ładuję…</div>
     <div class="tiny split">
@@ -133,7 +141,7 @@
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR5ZnJ6d3hoeWNxbnFudHZrdXh5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ1ODM5MjgsImV4cCI6MjA4MDE1OTkyOH0.n4jP0q7YZY-jQaSnHUkKWyI9wM02iHXnRXS31AATnY0";
 
     /**********************
-     * Fallback randomizery
+     * Randomizery (fallback / "true random vibe")
      **********************/
     const randomizers = [
       { url: "https://en.wikipedia.org/wiki/Special:Random", title: "Wikipedia – losowy artykuł" },
@@ -141,6 +149,10 @@
       { url: "https://www.wikidata.org/wiki/Special:Random", title: "Wikidata – losowy wpis" },
       { url: "https://theuselessweb.com/", title: "The Useless Web" }
     ];
+
+    // Szansa na randomizer vs baza:
+    // 0.35 = 35% randomizer, 65% Supabase (jak są linki w danej kategorii)
+    const RANDOMIZER_CHANCE = 0.35;
 
     // ile prób ma zrobić zanim uzna "dobra, nie ma nowych"
     const MAX_UNIQUE_TRIES = 30;
@@ -150,7 +162,6 @@
 
     const $status = document.getElementById("status");
     const $meta = document.getElementById("meta");
-    const $mode = document.getElementById("mode");
     const $tag = document.getElementById("tag");
     const $go = document.getElementById("goBtn");
     const $copy = document.getElementById("copyBtn");
@@ -179,7 +190,6 @@
     function normalizeUrl(u){
       try {
         const url = new URL(u);
-        // normalizacja minimalna: usuń trailing slash
         return url.href.replace(/\/$/, "");
       } catch {
         return String(u || "").trim();
@@ -262,41 +272,32 @@
       return links.filter(l => normTag(l.tag).toLowerCase() === selected.toLowerCase());
     }
 
-    function chooseCandidate(mode){
-      const filtered = filteredLinks();
-
-      if (mode === "wiki") {
-        return { url: "https://en.wikipedia.org/wiki/Special:Random", title: "Wikipedia – losowy artykuł" };
-      }
-      if (mode === "internet") {
-        return pick(randomizers);
-      }
-
-      if (mode === "supabase") {
-        if (filtered.length) {
-          const it = pick(filtered);
-          return { url: it.url, title: it.title || it.url, tag: normTag(it.tag) };
-        }
-        return pick(randomizers);
-      }
-
-      // mix
-      if (filtered.length && Math.random() < 0.7) {
-        const it = pick(filtered);
-        return { url: it.url, title: it.title || it.url, tag: normTag(it.tag) };
-      }
-      return pick(randomizers);
+    function currentTagLabel(){
+      const v = $tag.value || "all";
+      if (v === "all") return "";
+      return ` | kategoria: ${v}`;
     }
 
-    function pickUnique(mode){
-      // próbujemy kilka razy znaleźć nieotwierany link
+    function chooseCandidate(){
+      const filtered = filteredLinks();
+
+      // jeśli w kategorii nie ma nic, randomizer zawsze
+      if (!filtered.length) return pick(randomizers);
+
+      // losujemy: randomizer vs supabase
+      if (Math.random() < RANDOMIZER_CHANCE) return pick(randomizers);
+
+      const it = pick(filtered);
+      return { url: it.url, title: it.title || it.url, tag: normTag(it.tag) };
+    }
+
+    function pickUnique(){
       for (let i = 0; i < MAX_UNIQUE_TRIES; i++){
-        const it = chooseCandidate(mode);
+        const it = chooseCandidate();
         const nu = normalizeUrl(it.url);
         if (!opened.has(nu)) return it;
       }
-      // jeśli wszystko się powtarza, zwracamy cokolwiek
-      return chooseCandidate(mode);
+      return chooseCandidate();
     }
 
     function setLast(url, title){
@@ -308,30 +309,20 @@
       $share.disabled = !enabled;
     }
 
-    function currentTagLabel(){
-      const v = $tag.value || "all";
-      if (v === "all") return "";
-      return ` | kategoria: ${v}`;
-    }
-
     function openInNewTab(url){
-      // "_blank" + "noopener,noreferrer" żeby było bezpiecznie
       const win = window.open(url, "_blank", "noopener,noreferrer");
       if (!win) {
-        // jeśli popup blocker zablokuje
         setStatus("Przeglądarka zablokowała otwarcie nowej karty (popup). Kliknij link poniżej ręcznie.");
         setMetaHtml(`<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>`);
       }
     }
 
     $go.addEventListener("click", () => {
-      const mode = $mode.value;
-      const it = pickUnique(mode);
+      const it = pickUnique();
 
       const nu = normalizeUrl(it.url);
       const wasOpened = opened.has(nu);
 
-      // zapamiętaj jako otwarte
       opened.add(nu);
       saveOpenedSet(opened);
 
@@ -367,7 +358,6 @@
         } catch (_) {}
       }
 
-      // fallback: kopiuj do schowka
       try {
         await navigator.clipboard.writeText(lastUrl);
         setStatus("Skopiowane (share fallback) ✅");
@@ -416,8 +406,8 @@
         setMetaHtml("Tip: dodawaj tagi (kategorie) w Supabase → random_links.");
         $go.disabled = false;
       } else {
-        setStatus("W bazie nie ma linków (albo wszystkie disabled). Użyję fallbacków.");
-        setMetaHtml("Tryb MIX/Wiki/Internet nadal działa.");
+        setStatus("W bazie nie ma linków (albo wszystkie disabled). Będę używać randomizerów.");
+        setMetaHtml("Dodaj linki do random_links, żeby było ciekawiej.");
         $go.disabled = false;
         $tag.disabled = true;
       }

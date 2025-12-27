@@ -14,6 +14,8 @@
       --muted:#a9b4c7;
       --stroke:#24324a;
       --accent:#7cf7ff;
+      --accent2:#ff79c6;
+      --danger:#ff7878;
     }
     *{box-sizing:border-box}
     body{
@@ -38,8 +40,9 @@
     }
     h1{margin:0 0 8px 0; font-size:clamp(22px,3.2vw,34px)}
     p{margin:0 0 14px 0; color:var(--muted); line-height:1.35}
+
     .row{display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:14px;}
-    button, select{
+    select, button{
       border:1px solid var(--stroke);
       background:#0b1220;
       color:var(--text);
@@ -48,24 +51,72 @@
       font-size:15px;
       outline:none;
     }
-    button{
-      cursor:pointer;
-      font-weight:800;
-      border-color: rgba(124,247,255,.35);
-      box-shadow: 0 10px 30px rgba(124,247,255,.12);
-    }
-    button:disabled{
-      opacity:.55; cursor:not-allowed;
-      box-shadow:none;
-    }
-    /* big main CTA */
+
+    /* Big main CTA (cool) */
     .goBig{
       width:100%;
       padding:18px 18px;
-      font-size:18px;
-      border-radius:16px;
-      margin-top:8px;
+      font-size:19px;
+      font-weight:900;
+      border-radius:18px;
+      margin-top:10px;
+      border:1px solid rgba(124,247,255,.35);
+      position:relative;
+      overflow:hidden;
+      box-shadow:
+        0 18px 60px rgba(124,247,255,.10),
+        0 18px 70px rgba(255,121,198,.06);
+      transform: translateZ(0);
     }
+    .goBig::before{
+      content:"";
+      position:absolute;
+      inset:-2px;
+      background: radial-gradient(700px 140px at 20% 20%, rgba(124,247,255,.35), transparent 60%),
+                  radial-gradient(700px 140px at 80% 60%, rgba(255,121,198,.22), transparent 60%);
+      filter: blur(10px);
+      opacity:.9;
+      pointer-events:none;
+    }
+    .goBig::after{
+      content:"";
+      position:absolute;
+      top:-40%;
+      left:-30%;
+      width:60%;
+      height:200%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent);
+      transform: rotate(18deg);
+      opacity:.0;
+      pointer-events:none;
+    }
+    .goBig:hover::after{
+      opacity:.9;
+      animation: shine 1.1s ease forwards;
+    }
+    @keyframes shine{
+      from{ transform: translateX(-20%) rotate(18deg); }
+      to{ transform: translateX(240%) rotate(18deg); }
+    }
+    .goBig:hover{ box-shadow:
+        0 22px 80px rgba(124,247,255,.14),
+        0 22px 90px rgba(255,121,198,.10);
+    }
+    .goBig:active{ transform: translateY(1px) scale(.995); }
+    .goBig span{
+      position:relative;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:10px;
+      width:100%;
+    }
+
+    button{ cursor:pointer; font-weight:800; }
+    button:disabled{ opacity:.55; cursor:not-allowed; box-shadow:none; }
+
+    .label{ color:var(--muted); font-size:13px; margin-right:2px; }
+
     .status{
       margin-top:14px;
       border:1px dashed rgba(124,247,255,.35);
@@ -78,11 +129,25 @@
       display:flex;
       align-items:center;
     }
-    .tiny{ font-size:12px; color:var(--muted); margin-top:10px }
+
+    .bottomBar{
+      margin-top:10px;
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+      justify-content:space-between;
+    }
+    .linkBox{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+    .tiny{ font-size:12px; color:var(--muted); }
     a{color:var(--accent); text-decoration:none}
     a:hover{text-decoration:underline}
-    .label{ color:var(--muted); font-size:13px; margin-right:2px; }
-    .split{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+
     .pill{
       border:1px solid var(--stroke);
       border-radius:999px;
@@ -91,9 +156,35 @@
       color:var(--muted);
       background:#0b1220aa;
     }
-    .danger{ border-color: rgba(255,120,120,.35); }
-    .toolsRow{ justify-content: space-between; }
-    .toolsRight{ display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+    .danger{
+      border-color: rgba(255,120,120,.35);
+      color:#ffd2d2;
+    }
+
+    .miniBtn{
+      padding:10px 12px;
+      border-radius:12px;
+      font-size:14px;
+      background:#0b1220;
+    }
+    .miniBtn.primary{
+      border-color: rgba(124,247,255,.35);
+      box-shadow: 0 10px 30px rgba(124,247,255,.10);
+    }
+
+    .rightGroup{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+      justify-content:flex-end;
+    }
+
+    @media (max-width: 520px){
+      .bottomBar{ flex-direction:column; align-items:stretch; }
+      .rightGroup{ justify-content:stretch; }
+      .miniBtn{ width:100%; }
+    }
   </style>
 </head>
 
@@ -101,34 +192,42 @@
   <main class="card">
     <h1>🎲 Random Portal</h1>
     <p>
-      Jeden guzik. Jedna losowa przygoda.
-      Losuje między Twoją bazą (Supabase) a randomizerami i otwiera w <b>nowej karcie</b>.
+      Jeden guzik. Jedna losowa przygoda. Losuje między Twoją bazą (Supabase) a randomizerami i otwiera w <b>nowej karcie</b>.
       Portal pamięta już otwarte linki (żeby się nie mielić w kółko).
     </p>
 
-    <!-- Controls -->
-    <div class="row toolsRow">
-      <div class="split">
+    <!-- Top controls -->
+    <div class="row" style="justify-content:space-between;">
+      <div class="row" style="margin-top:0;">
         <span class="label">Kategoria</span>
         <select id="tag">
           <option value="all" selected>Wszystko</option>
         </select>
       </div>
 
-      <div class="toolsRight">
-        <button id="copyBtn" disabled>Kopiuj link</button>
-        <button id="shareBtn" disabled>Share</button>
-        <button id="resetBtn" class="danger" title="Pozwala losować te same linki od nowa">Reset historii</button>
+      <div class="row" style="margin-top:0;">
+        <button id="resetBtn" class="miniBtn danger" title="Pozwala losować te same linki od nowa">Reset historii</button>
+        <span class="pill">Otwartych: <span id="openedCount">0</span></span>
       </div>
     </div>
 
     <!-- Big button -->
-    <button id="goBtn" class="goBig" disabled>Zabierz mnie</button>
+    <button id="goBtn" class="goBig" disabled>
+      <span>🚀 Zabierz mnie</span>
+    </button>
 
+    <!-- Status -->
     <div class="status" id="status">Ładuję…</div>
-    <div class="tiny split">
-      <span id="meta">—</span>
-      <span class="pill">Otwartych: <span id="openedCount">0</span></span>
+
+    <!-- Bottom: last link + actions -->
+    <div class="bottomBar">
+      <div class="linkBox tiny" id="meta">—</div>
+
+      <div class="rightGroup">
+        <button id="copyBtn" class="miniBtn" disabled>Kopiuj link</button>
+        <button id="shareLinkBtn" class="miniBtn primary" disabled>Share link</button>
+        <button id="sharePortalBtn" class="miniBtn">Share Random Portal</button>
+      </div>
     </div>
   </main>
 
@@ -165,7 +264,8 @@
     const $tag = document.getElementById("tag");
     const $go = document.getElementById("goBtn");
     const $copy = document.getElementById("copyBtn");
-    const $share = document.getElementById("shareBtn");
+    const $shareLink = document.getElementById("shareLinkBtn");
+    const $sharePortal = document.getElementById("sharePortalBtn");
     const $reset = document.getElementById("resetBtn");
     const $openedCount = document.getElementById("openedCount");
 
@@ -280,11 +380,8 @@
 
     function chooseCandidate(){
       const filtered = filteredLinks();
-
-      // jeśli w kategorii nie ma nic, randomizer zawsze
       if (!filtered.length) return pick(randomizers);
 
-      // losujemy: randomizer vs supabase
       if (Math.random() < RANDOMIZER_CHANCE) return pick(randomizers);
 
       const it = pick(filtered);
@@ -306,7 +403,7 @@
 
       const enabled = !!lastUrl;
       $copy.disabled = !enabled;
-      $share.disabled = !enabled;
+      $shareLink.disabled = !enabled;
     }
 
     function openInNewTab(url){
@@ -314,6 +411,34 @@
       if (!win) {
         setStatus("Przeglądarka zablokowała otwarcie nowej karty (popup). Kliknij link poniżej ręcznie.");
         setMetaHtml(`<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>`);
+      }
+    }
+
+    function portalUrl(){
+      // bez query/hash, czysty adres strony
+      try{
+        const u = new URL(window.location.href);
+        u.search = "";
+        u.hash = "";
+        return u.toString();
+      }catch{
+        return window.location.href;
+      }
+    }
+
+    async function shareStuff({ title, text, url }){
+      if (navigator.share) {
+        try { await navigator.share({ title, text, url }); return true; }
+        catch (_) { return false; }
+      }
+      // fallback -> clipboard
+      try{
+        await navigator.clipboard.writeText(url || text || "");
+        setStatus("Skopiowane do schowka ✅");
+        setMetaHtml(`<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>`);
+        return true;
+      }catch{
+        return false;
       }
     }
 
@@ -345,27 +470,17 @@
       }
     });
 
-    $share.addEventListener("click", async () => {
+    $shareLink.addEventListener("click", async () => {
       if (!lastUrl) return;
-
       const tagTxt = ($tag.value && $tag.value !== "all") ? ` (${ $tag.value })` : "";
       const text = `Random Portal${tagTxt}: ${lastUrl}`;
+      await shareStuff({ title: "Random Portal", text, url: lastUrl });
+    });
 
-      if (navigator.share) {
-        try {
-          await navigator.share({ title: "Random Portal", text, url: lastUrl });
-          return;
-        } catch (_) {}
-      }
-
-      try {
-        await navigator.clipboard.writeText(lastUrl);
-        setStatus("Skopiowane (share fallback) ✅");
-        setMetaHtml(`<a href="${escapeHtml(lastUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(lastUrl)}</a>`);
-      } catch {
-        setStatus("Share nie działa — masz link poniżej:");
-        setMetaHtml(`<a href="${escapeHtml(lastUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(lastUrl)}</a>`);
-      }
+    $sharePortal.addEventListener("click", async () => {
+      const url = portalUrl();
+      const text = "Random Portal – kliknij i daj się zabrać w losową stronę";
+      await shareStuff({ title: "Random Portal", text, url });
     });
 
     $reset.addEventListener("click", () => {
@@ -375,7 +490,7 @@
       setMetaHtml("Kliknij „Zabierz mnie”.");
       setLast("", "");
       $copy.disabled = true;
-      $share.disabled = true;
+      $shareLink.disabled = true;
     });
 
     $tag.addEventListener("change", () => {
@@ -395,7 +510,7 @@
       if (!validConfig()) {
         $go.disabled = true;
         $copy.disabled = true;
-        $share.disabled = true;
+        $shareLink.disabled = true;
         $tag.disabled = true;
         return;
       }
